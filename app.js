@@ -74,10 +74,23 @@ async function serverCall(fnName,args,onSuccess,onFailure){
   const key = fnName + '|' + JSON.stringify(args||[]);
 
   // Funções que NÃO devem ser cacheadas (escrita/mutação)
-  const noCache = ['Lancamento_create','Lancamento_createAndSubmit','Lancamento_submit','Approval_decide','Approval_listPending','Approval_repararPendencias',
-    'User_create','User_toggleActive','Igreja_create','Igreja_toggleActive',
-    'Departamento_create','Departamento_toggleActive','Auth_logout',
-    'SaldoInicial_saveBulk','SaldoInicial_delete'];
+  const noCache = [
+    'Lancamento_create',
+    'Lancamento_createAndSubmit',
+    'Lancamento_submit',
+    'Approval_decide',
+    'User_create',
+    'User_toggleActive',
+    'Igreja_create',
+    'Igreja_toggleActive',
+    'Departamento_create',
+    'Departamento_toggleActive',
+    'Auth_logout',
+    'SaldoInicial_set',
+    'SaldoInicial_setRubrica',
+    'SaldoInicial_saveBulk',
+    'SaldoInicial_delete'
+  ];
 
   const useCache = !noCache.includes(fnName);
   const ttl = fnName.includes('getFormOptions')||fnName.includes('Opts') ? _TTL.opts
@@ -272,12 +285,9 @@ function openDashboard(){
 
   document.getElementById('contentArea').innerHTML=`
     <div class="grid" style="margin-top:0;">
-      <div class="card"><div class="card-title">📈 Entradas Aprovadas</div><div id="dashEntradas" class="card-value">0,00 MZN</div></div>
-      <div class="card"><div class="card-title">📉 Saídas Aprovadas</div><div id="dashSaidas" class="card-value">0,00 MZN</div></div>
+      <div class="card"><div class="card-title">📈 Receitas Aprovadas</div><div id="dashReceitas" class="card-value">0,00 MZN</div></div>
+      <div class="card"><div class="card-title">📉 Despesas Aprovadas</div><div id="dashDespesas" class="card-value">0,00 MZN</div></div>
       <div class="card"><div class="card-title">💰 Saldo Aprovado</div><div id="dashSaldo" class="card-value">0,00 MZN</div></div>
-      <div class="card"><div class="card-title">📤 Entradas Submetidas</div><div id="dashEntradasSubmetidas" class="card-value">0,00 MZN</div></div>
-      <div class="card"><div class="card-title">📥 Saídas Submetidas</div><div id="dashSaidasSubmetidas" class="card-value">0,00 MZN</div></div>
-      <div class="card"><div class="card-title">🧮 Saldo Projectado</div><div id="dashSaldoProjectado" class="card-value">0,00 MZN</div></div>
       <div class="card"><div class="card-title">⏳ Submetidos</div><div id="dashPendentes" class="card-value">0</div></div>
       <div class="card"><div class="card-title">📝 Rascunhos</div><div id="dashRascunhos" class="card-value">0</div></div>
       <div class="card"><div class="card-title">❌ Rejeitados</div><div id="dashRejeitados" class="card-value">0</div></div>
@@ -295,21 +305,13 @@ function openDashboard(){
     </div>`;
 
   serverCall('Dashboard_getSummary',[{}],function(s){
-    const saldoAprovado = Number(s?.saldo_aprovado ?? s?.saldo ?? 0);
-    const entradasSubmetidas = Number(s?.entradas_submetidas ?? s?.receitas_submetidas ?? 0);
-    const saidasSubmetidas = Number(s?.saidas_submetidas ?? s?.despesas_submetidas ?? 0);
-    const saldoProjectado = Number(s?.saldo_projectado ?? (saldoAprovado + entradasSubmetidas - saidasSubmetidas));
-
-    document.getElementById('dashEntradas').textContent  =formatMoney(s?.entradas_aprovadas ?? s?.receitas_aprovadas);
-    document.getElementById('dashSaidas').textContent  =formatMoney(s?.saidas_aprovadas ?? s?.despesas_aprovadas);
-    document.getElementById('dashSaldo').textContent     =formatMoney(saldoAprovado);
-    document.getElementById('dashEntradasSubmetidas').textContent =formatMoney(entradasSubmetidas);
-    document.getElementById('dashSaidasSubmetidas').textContent   =formatMoney(saidasSubmetidas);
-    document.getElementById('dashSaldoProjectado').textContent    =formatMoney(saldoProjectado);
+    document.getElementById('dashReceitas').textContent  =formatMoney(s?.receitas_aprovadas);
+    document.getElementById('dashDespesas').textContent  =formatMoney(s?.despesas_aprovadas);
+    document.getElementById('dashSaldo').textContent     =formatMoney(s?.saldo);
     document.getElementById('dashPendentes').textContent =String(s?.pendentes??0);
     document.getElementById('dashRascunhos').textContent =String(s?.rascunhos??0);
     document.getElementById('dashRejeitados').textContent=String(s?.rejeitados??0);
-    document.getElementById('kpiSaldo').textContent=formatMoney(saldoProjectado);
+    document.getElementById('kpiSaldo').textContent=formatMoney(s?.saldo);
     const igNome=s?.igreja_nome||'';
     if(igNome) document.getElementById('kpiIgreja').textContent=igNome;
   },function(err){
@@ -413,7 +415,7 @@ function carregarLancamentos(){
         <td>${nomeRubrica(l.id_rubrica)}</td>
         <td>${nomeDepto(l.id_departamento)}</td>
         <td style="text-align:right;font-weight:600;">${formatMoney(l.valor)}</td>
-        <td style="white-space:nowrap;">${l.tipo_movimento==='ENTRADA'?'📈 Entrada':'📉 Saída'}</td>
+        <td style="white-space:nowrap;">${l.tipo_movimento==='RECEITA'?'📈 Receita':'📉 Despesa'}</td>
         <td>${statusBadge(l.estado)}</td>
         <td class="row-actions">${l.estado==='RASCUNHO'?`
           <button class="success" style="font-size:12px;padding:6px 10px;min-height:32px;" onclick="submeterLancamento('${l.id_lancamento}')">📤 Submeter</button>`:''}
@@ -436,8 +438,8 @@ function mostrarFormLancamento(){
         <div>
           <label>Tipo de Movimento *</label>
           <select id="fl_tipo" onchange="actualizarRubricas()">
-            <option value="ENTRADA">📈 Entrada</option>
-            <option value="SAIDA">📉 Saída</option>
+            <option value="RECEITA">📈 Receita</option>
+            <option value="DESPESA">📉 Despesa</option>
           </select>
           <label>Data *</label>
           <input type="date" id="fl_data" value="${agora.toISOString().split('T')[0]}">
@@ -571,13 +573,16 @@ function guardarLancamento(modo){
   }
 
   if(modo==='SUBMETER'){
-    serverCall('Lancamento_createAndSubmit',[payload],function(res){
+    serverCall('Lancamento_create',[payload],function(res){
       const idLanc=res?.id_lancamento||res?.id;
-      uploadSeExistir(idLanc||'', function(){
-        showMessage('✅ Lançamento submetido para aprovação!'+(ficheiro?' Comprovativo anexado.':''),true,'msgLanc');
-        setTimeout(()=>{ openLancamentos(); },1500);
+      if(!idLanc){ showMessage('✅ Criado!',true,'msgLanc'); setTimeout(()=>{ openLancamentos(); },1200); return; }
+      uploadSeExistir(idLanc, function(){
+        serverCall('Lancamento_submit',[idLanc],function(){
+          showMessage('✅ Lançamento submetido para aprovação!'+(ficheiro?' Comprovativo anexado.':''),true,'msgLanc');
+          setTimeout(()=>{ openLancamentos(); },1500);
+        },function(e2){ showMessage('⚠️ Criado mas erro ao submeter: '+e2?.message,false,'msgLanc'); });
       });
-    },function(err){ showMessage('❌ '+(err?.message||'Falha ao submeter lançamento.'),false,'msgLanc'); });
+    },function(err){ showMessage('❌ '+err?.message,false,'msgLanc'); });
   } else {
     serverCall('Lancamento_create',[payload],function(res){
       const idLanc=res?.id_lancamento||res?.id;
@@ -729,7 +734,7 @@ function carregarAprovacoes(){
         <td>${nomeDepto(l.id_departamento)}</td>
         <td>${nomeIgreja(l.id_igreja)}</td>
         <td style="text-align:right;font-weight:600;">${formatMoney(l.valor)}</td>
-        <td style="white-space:nowrap;">${l.tipo_movimento==='ENTRADA'||l.tipo_movimento==='RECEITA'?'📈 Entrada':'📉 Saída'}</td>
+        <td style="white-space:nowrap;">${l.tipo_movimento==='RECEITA'||l.tipo_movimento==='ENTRADA'?'📈 Entrada':'📉 Despesa'}</td>
         <td class="row-actions">
           <button class="success" style="font-size:12px;padding:6px 10px;min-height:32px;" onclick="decidirAprovacao('${l.id_aprovacao}','APROVADO')">✅ Aprovar</button>
           <button class="danger"  style="font-size:12px;padding:6px 10px;min-height:32px;" onclick="decidirAprovacao('${l.id_aprovacao}','REJEITADO')">❌ Rejeitar</button>
@@ -758,14 +763,14 @@ function decidirAprovacao(idAprovacao,decisao){
       over.remove();
       serverCall('Approval_decide',[idAprovacao,'REJEITADO',motivo],function(){
         carregarAprovacoes();
-        serverCall('Dashboard_getSummary',[{}],function(s){ const el=document.getElementById('kpiSaldo'); if(el) el.textContent=formatMoney(s?.saldo_projectado ?? s?.saldo); },()=>{});
+        serverCall('Dashboard_getSummary',[{}],function(s){ const el=document.getElementById('kpiSaldo'); if(el) el.textContent=formatMoney(s?.saldo); },()=>{});
       },function(err){ mostrarErro(err?.message||'Falha ao rejeitar'); });
     };
   } else {
     confirmar('Confirmar aprovação deste lançamento?', function(){
       serverCall('Approval_decide',[idAprovacao,'APROVADO',''],function(){
         carregarAprovacoes();
-        serverCall('Dashboard_getSummary',[{}],function(s){ const el=document.getElementById('kpiSaldo'); if(el) el.textContent=formatMoney(s?.saldo_projectado ?? s?.saldo); },()=>{});
+        serverCall('Dashboard_getSummary',[{}],function(s){ const el=document.getElementById('kpiSaldo'); if(el) el.textContent=formatMoney(s?.saldo); },()=>{});
       },function(err){ mostrarErro(err?.message||'Falha ao aprovar'); });
     });
   }
@@ -954,8 +959,8 @@ function gerarRelatorioRubricas(){
       const tipo=String(l.tipo_movimento||'').trim().toUpperCase();
       const valor=Number(l.valor||0);
       if(!agrupado[idRub]){ agrupado[idRub]={id_rubrica:idRub,nome_rubrica:nomeRubrica(idRub),nome_grupo:nomeGrupo(l.id_grupo),tipo_movimento:tipo,entrada:0,saida:0}; }
-      if(tipo==='ENTRADA'||tipo==='RECEITA') agrupado[idRub].entrada+=valor;
-      if(tipo==='SAIDA'||tipo==='DESPESA')   agrupado[idRub].saida+=valor;
+      if(tipo==='RECEITA'||tipo==='ENTRADA') agrupado[idRub].entrada+=valor;
+      if(tipo==='DESPESA'||tipo==='SAIDA')   agrupado[idRub].saida+=valor;
     });
 
     const linhas=Object.values(agrupado).map(function(g){ return {...g,saldo:g.entrada-g.saida}; })
@@ -1092,7 +1097,7 @@ function tabelaRubricas(linhas,res){
     <tbody>${linhas.map(l=>`<tr>
       <td>${safeText(l.nome_grupo)}</td>
       <td><strong>${safeText(l.nome_rubrica)}</strong></td>
-      <td style="white-space:nowrap;">${l.tipo_movimento==='ENTRADA'||l.tipo_movimento==='RECEITA'?'📈 Entrada':l.tipo_movimento==='SAIDA'||l.tipo_movimento==='DESPESA'?'📉 Saída':'-'}</td>
+      <td style="white-space:nowrap;">${l.tipo_movimento==='RECEITA'||l.tipo_movimento==='ENTRADA'?'📈 Entrada':l.tipo_movimento==='DESPESA'?'📉 Despesa':'-'}</td>
       <td class="right verde">${formatMoney(l.entrada)}</td>
       <td class="right vermelho">${formatMoney(l.saida)}</td>
       <td class="right" style="font-weight:700;color:${Number(l.saldo||0)>=0?'#28a745':'#dc3545'};">${formatMoney(l.saldo)}</td>
@@ -1752,39 +1757,65 @@ function saldosLimparFormDeptos(ids){
 }
 
 function saldosGuardarDeptos(ids){
-  const ano=Number(document.getElementById('si_ano_d')?.value||new Date().getFullYear());
-  const igreja=document.getElementById('si_igr_d')?.value||'';
+  const ano = Number(document.getElementById('si_ano_d')?.value || new Date().getFullYear());
+  const igreja = document.getElementById('si_igr_d')?.value || '';
 
-  const entradas=[];
+  const entradas = [];
+
   ids.forEach(function(id){
-    const raw=document.getElementById('sid_val_'+id)?.value?.trim();
-    if(raw===''||raw===null||raw===undefined) return;
-    const val=parseFloat(raw);
-    if(isNaN(val)) return;
-    const obs=document.getElementById('sid_obs_'+id)?.value?.trim()||'';
-    entradas.push({id_departamento:id, saldo_inicial:val, ano, id_igreja:igreja, observacao:obs});
+    const input = document.getElementById('sid_val_' + id);
+    const obsInput = document.getElementById('sid_obs_' + id);
+    if (!input) return;
+
+    let raw = String(input.value || '').trim();
+    raw = raw.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+    if (raw === '') return;
+
+    const val = Number(raw);
+    if (isNaN(val)) return;
+
+    const obs = obsInput ? String(obsInput.value || '').trim() : '';
+    entradas.push({
+      id_departamento: id,
+      saldo_inicial: val,
+      ano: ano,
+      id_igreja: igreja,
+      observacao: obs
+    });
   });
 
-  if(!entradas.length){
-    showMessage('⚠️ Não foram introduzidos valores. Preencha pelo menos um saldo.',false,'msgSaldoD'); return;
+  if (!entradas.length) {
+    showMessage('⚠️ Não foram introduzidos valores válidos. Preencha pelo menos um saldo.', false, 'msgSaldoD');
+    return;
   }
 
-  showMessage(`⏳ A guardar ${entradas.length} saldo(s)...`,true,'msgSaldoD');
+  showMessage(`⏳ A guardar ${entradas.length} saldo(s)...`, true, 'msgSaldoD');
 
-  // Guardar sequencialmente com feedback
-  let ok=0, erros=0;
+  let ok = 0;
+  let erros = [];
+
   function gravar(i){
-    if(i>=entradas.length){
-      const msg = erros===0
-        ? `✅ ${ok} saldo(s) guardado(s) com sucesso!`
-        : `⚠️ ${ok} guardado(s), ${erros} com erro.`;
-      showMessage(msg, erros===0,'msgSaldoD');
-      if(erros===0) invalidarCache();
+    if (i >= entradas.length) {
+      if (erros.length === 0) {
+        invalidarCache();
+        showMessage(`✅ ${ok} saldo(s) guardado(s) com sucesso.`, true, 'msgSaldoD');
+      } else {
+        showMessage(`⚠️ ${ok} saldo(s) guardado(s), ${erros.length} erro(s): ` + erros.join(' | '), false, 'msgSaldoD');
+      }
       return;
     }
-    serverCall('SaldoInicial_set',[entradas[i]],function(){ ok++; gravar(i+1); },
-      function(err){ erros++; gravar(i+1); });
+
+    serverCall(
+      'SaldoInicial_set',
+      [entradas[i]],
+      function(){ ok++; gravar(i + 1); },
+      function(err){
+        erros.push((entradas[i].id_departamento || 'Departamento') + ': ' + (err?.message || 'erro desconhecido'));
+        gravar(i + 1);
+      }
+    );
   }
+
   gravar(0);
 }
 
@@ -1827,8 +1858,8 @@ function saldosFormRubricas(){
         </td>
       </tr>`;
       porGrupo[gid].forEach(function(r){
-        const tipo=r.tipo_movimento==='ENTRADA'?'<span style="color:#28a745;font-size:11px;">📈 Entrada</span>':
-                   r.tipo_movimento==='SAIDA'?'<span style="color:#dc3545;font-size:11px;">📉 Saída</span>':
+        const tipo=r.tipo_movimento==='RECEITA'?'<span style="color:#28a745;font-size:11px;">📈 Receita</span>':
+                   r.tipo_movimento==='DESPESA'?'<span style="color:#dc3545;font-size:11px;">📉 Despesa</span>':
                    '<span style="color:#6c757d;font-size:11px;">—</span>';
         tbodyHTML+=`<tr>
           <td style="padding-left:20px;">
@@ -1918,39 +1949,67 @@ function saldosLimparFormRubricas(ids){
 }
 
 function saldosGuardarRubricas(ids){
-  const ano=Number(document.getElementById('si_ano_r')?.value||new Date().getFullYear());
-  const igreja=document.getElementById('si_igr_r')?.value||'';
-  const depto=document.getElementById('si_dep_r')?.value||'';
+  const ano = Number(document.getElementById('si_ano_r')?.value || new Date().getFullYear());
+  const igreja = document.getElementById('si_igr_r')?.value || '';
+  const depto = document.getElementById('si_dep_r')?.value || '';
 
-  const entradas=[];
+  const entradas = [];
+
   ids.forEach(function(id){
-    const raw=document.getElementById('sir_val_'+id)?.value?.trim();
-    if(raw===''||raw===null||raw===undefined) return;
-    const val=parseFloat(raw);
-    if(isNaN(val)) return;
-    const obs=document.getElementById('sir_obs_'+id)?.value?.trim()||'';
-    entradas.push({id_rubrica:id, saldo_inicial:val, ano, id_igreja:igreja, id_departamento:depto, observacao:obs});
+    const input = document.getElementById('sir_val_' + id);
+    const obsInput = document.getElementById('sir_obs_' + id);
+    if (!input) return;
+
+    let raw = String(input.value || '').trim();
+    raw = raw.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+    if (raw === '') return;
+
+    const val = Number(raw);
+    if (isNaN(val)) return;
+
+    const obs = obsInput ? String(obsInput.value || '').trim() : '';
+    entradas.push({
+      id_rubrica: id,
+      saldo_inicial: val,
+      ano: ano,
+      id_igreja: igreja,
+      id_departamento: depto,
+      observacao: obs
+    });
   });
 
-  if(!entradas.length){
-    showMessage('⚠️ Não foram introduzidos valores. Preencha pelo menos um saldo.',false,'msgSaldoR'); return;
+  if (!entradas.length) {
+    showMessage('⚠️ Não foram introduzidos valores válidos. Preencha pelo menos um saldo.', false, 'msgSaldoR');
+    return;
   }
 
-  showMessage(`⏳ A guardar ${entradas.length} saldo(s)...`,true,'msgSaldoR');
+  showMessage(`⏳ A guardar ${entradas.length} saldo(s) de rubrica...`, true, 'msgSaldoR');
 
-  let ok=0, erros=0;
+  let ok = 0;
+  let erros = [];
+
   function gravar(i){
-    if(i>=entradas.length){
-      const msg = erros===0
-        ? `✅ ${ok} saldo(s) de rubrica guardado(s) com sucesso!`
-        : `⚠️ ${ok} guardado(s), ${erros} com erro.`;
-      showMessage(msg, erros===0,'msgSaldoR');
-      if(erros===0) invalidarCache();
+    if (i >= entradas.length) {
+      if (erros.length === 0) {
+        invalidarCache();
+        showMessage(`✅ ${ok} saldo(s) de rubrica guardado(s) com sucesso.`, true, 'msgSaldoR');
+      } else {
+        showMessage(`⚠️ ${ok} guardado(s), ${erros.length} erro(s): ` + erros.join(' | '), false, 'msgSaldoR');
+      }
       return;
     }
-    serverCall('SaldoInicial_setRubrica',[entradas[i]],function(){ ok++; gravar(i+1); },
-      function(err){ erros++; gravar(i+1); });
+
+    serverCall(
+      'SaldoInicial_setRubrica',
+      [entradas[i]],
+      function(){ ok++; gravar(i + 1); },
+      function(err){
+        erros.push((entradas[i].id_rubrica || 'Rubrica') + ': ' + (err?.message || 'erro desconhecido'));
+        gravar(i + 1);
+      }
+    );
   }
+
   gravar(0);
 }
 
