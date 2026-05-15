@@ -1,0 +1,1 @@
+Substitua app.js, index.html e sw.js na raiz do GitHub/Vercel. Depois aguarde o deploy e limpe cache se necessário.
